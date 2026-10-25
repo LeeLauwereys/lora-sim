@@ -1,7 +1,7 @@
 import streamlit as st
 from berekeningen import *
-import matplotlib.pyplot as plt
-from matplotlib.patches import Circle
+#import matplotlib.pyplot as plt
+#from matplotlib.patches import Circle
 import pandas as pd
 import altair as alt     
 
