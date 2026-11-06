@@ -1,9 +1,11 @@
 import streamlit as st
 from berekeningen import *
-#import matplotlib.pyplot as plt
-#from matplotlib.patches import Circle
+import matplotlib.pyplot as plt
+from matplotlib.patches import Circle
 import pandas as pd
 import altair as alt     
+
+import plotly.graph_objects as go #voor de zone
 
 st.set_page_config(layout="wide")
 
@@ -236,116 +238,81 @@ with rechts:
 
 
 
-    # # CIRKELGRAFIEK (Streamlit-native)
-    # st.header("Bereik rond de zender")
 
-    # stap = st.slider("Afstand tussen de cirkels [m]", min_value=100, max_value=500, value=250, step=50)
-    # max_straal = 2000
-    # stralen = np.arange(stap, max_straal + 1, stap)
-
-    # # waardes per straal (zelfde functies als bij de lijngrafieken, chi = 0)
-    # pl_r = pathloss(pl_d0, n, stralen)
-    # rssi_r = p_ontvangen(p_tx, pl_r)
-    # snr_r = rssi_r - ruisvloer(bb, temperatuur)
-    # per_r = per(pl_r, pl_drempel(p_tx, sf), sigma)
-
-    # # elke cirkel = veel punten op gelijke afstand van de zender
-    # hoeken = np.linspace(0, 2 * np.pi, 120, endpoint=False)
-    # rijen = []
-    # for r, per_v in zip(stralen, per_r):
-    #     rijen.append(pd.DataFrame({
-    #         "x [m]": r * np.cos(hoeken),
-    #         "y [m]": r * np.sin(hoeken),
-    #         "PER [%]": round(float(per_v), 1),
-    #     }))
-    # rijen.append(pd.DataFrame({"x [m]": [0.0], "y [m]": [0.0], "PER [%]": [0.0]}))   # zender in het midden
-    # df_cirkels = pd.concat(rijen, ignore_index=True)
-
-    # st.scatter_chart(df_cirkels, x="x [m]", y="y [m]", color="PER [%]",
-    #                  size=20, width=650, height=650)
-
-    # # waardes per ring in een tabel
-    # df_tabel = pd.DataFrame({
-    #     "Afstand [m]": stralen,
-    #     "RSSI [dBm]": np.round(rssi_r, 1),
-    #     "SNR [dB]": np.round(snr_r, 1),
-    #     "PER [%]": np.round(per_r, 1),
-    # })
-    # st.dataframe(df_tabel, hide_index=True)
-
-    # st.markdown(
-    #     "- **RSSI (dBm):** het ontvangen vermogen. Hoe negatiever, hoe zwakker het signaal.\n"
-    #     "- **SNR (dB):** hoeveel het signaal boven (positief) of onder (negatief) de ruisvloer ligt. LoRa kan nog ontvangen bij een negatieve SNR.\n"
-    #     "- **PER (%):** de kans dat een pakket niet aankomt. De kleur van de cirkel toont dit: hoe hoger, hoe minder pakketten aankomen.\n"
-    #     "- **Cirkels:** zelfde afstand tot de zender (het punt in het midden). Het model heeft geen richting, dus de waardes gelden in alle richtingen."
-    # )
-
-
-
-    # CIRKELGRAFIEK
+    # HEATMAP (interactief, transparante achtergrond)
     st.header("Bereik rond de zender")
 
-    stap = st.slider("Afstand tussen de cirkels [m]", min_value=10, max_value=500, value=250, step=10)
-    max_straal = st.slider("Maximale afstand [m]", min_value=100, max_value=2000, value=250, step=50)
-    stralen = np.arange(stap, max_straal + 1, stap)
+    max_straal = st.slider("Maximale afstand tot de zender [m]", min_value=100, max_value=2000, value=500, step=50)
 
-    # waardes per straal (zelfde functies als bij de lijngrafieken, chi = 0)
-    pl_r = pathloss(pl_d0, n, stralen)
-    rssi_r = p_ontvangen(p_tx, pl_r)
-    snr_r = rssi_r - ruisvloer(bb, temperatuur)
-    per_r = per(pl_r, pl_drempel(p_tx, sf), sigma)
 
-    # elke cirkel = een gesloten lijn door veel punten op gelijke afstand van de zender
-    hoeken = np.linspace(0, 2 * np.pi, 181)
-    rijen = []
-    for r, rssi_v, snr_v, per_v in zip(stralen, rssi_r, snr_r, per_r):
-        rijen.append(pd.DataFrame({
-            "x": r * np.cos(hoeken),
-            "y": r * np.sin(hoeken),
-            "hoek": hoeken,
-            "afstand": int(r),
-            "rssi": round(float(rssi_v), 1),
-            "snr": round(float(snr_v), 1),
-            "per": round(float(per_v), 1),
-        }))
-    df_cirkels = pd.concat(rijen, ignore_index=True)
+    # raster over het vierkant [-max_straal, max_straal]²
+    N = 200
+    as_waarden = np.linspace(-max_straal, max_straal, N)
+    X, Y = np.meshgrid(as_waarden, as_waarden)
 
-    assen = alt.Scale(domain=[-max_straal, max_straal])
+    # afstand tot de zender (minimaal d0, anders log10(0))
+    r = np.maximum(np.sqrt(X**2 + Y**2), d0)
 
-    ringen = alt.Chart(df_cirkels).mark_line(strokeWidth=3).encode(
-        x=alt.X("x:Q", title="x [m]", scale=assen),
-        y=alt.Y("y:Q", title="y [m]", scale=assen),
-        order="hoek:Q",
-        detail="afstand:N",
-        color=alt.Color("per:Q", title="PER [%]",
-                        scale=alt.Scale(scheme="redyellowgreen", reverse=True, domain=[0, 100])),
-        tooltip=[
-            alt.Tooltip("afstand:Q", title="Afstand [m]"),
-            alt.Tooltip("rssi:Q", title="RSSI [dBm]"),
-            alt.Tooltip("snr:Q", title="SNR [dB]"),
-            alt.Tooltip("per:Q", title="PER [%]"),
-        ],
+    # zelfde functies als eerder, nu voor het hele raster (chi = 0)
+    pl_h = pathloss(pl_d0, n, r)
+    rssi_h = p_ontvangen(p_tx, pl_h)
+    snr_h = rssi_h - ruisvloer(bb, temperatuur)
+    per_h = per(pl_h, pl_drempel(p_tx, sf), sigma)
+
+    fig = go.Figure()
+
+    fig.add_trace(go.Heatmap(
+        x=as_waarden,
+        y=as_waarden,
+        z=per_h,
+        zmin=0, zmax=100,
+        colorscale="RdYlGn_r",
+        zsmooth="best",                       # vloeiend vlak, geen cellen
+        colorbar=dict(title="PER [%]"),
+        customdata=np.dstack([r, rssi_h, snr_h]),
+        hovertemplate=(
+            "Afstand: %{customdata[0]:.0f} m<br>"
+            "RSSI: %{customdata[1]:.1f} dBm<br>"
+            "SNR: %{customdata[2]:.1f} dB<br>"
+            "PER: %{z:.1f} %<extra></extra>"
+        ),
+    ))
+
+    
+    for niveau in (10, 50, 90):
+            fig.add_trace(go.Contour(
+                x=as_waarden, y=as_waarden, z=per_h,
+                contours=dict(start=niveau, end=niveau, size=1,
+                              coloring="lines", showlabels=True,
+                              labelformat=".0f", labelfont=dict(size=11)),
+                line=dict(color="rgba(0,0,0,0.6)", width=1.5),
+                showscale=False,
+                hoverinfo="skip",
+            ))
+
+    # zender in het midden
+    fig.add_trace(go.Scatter(
+        x=[0], y=[0], mode="markers", name="Zender",
+        marker=dict(size=10, color="white", line=dict(color="black", width=2)),
+        hovertemplate="Zender<extra></extra>",
+        showlegend=False,
+    ))
+
+    fig.update_layout(
+        width=700, height=650,
+        paper_bgcolor="rgba(0,0,0,0)",        # transparante achtergrond
+        plot_bgcolor="rgba(0,0,0,0)",
+        margin=dict(l=10, r=10, t=10, b=10),
+        xaxis=dict(title="x [m]", range=[-max_straal, max_straal], constrain="domain"),
+        yaxis=dict(title="y [m]", range=[-max_straal, max_straal],
+                   scaleanchor="x", scaleratio=1),   # vierkant
     )
 
-    zender = alt.Chart(pd.DataFrame({"x": [0], "y": [0]})).mark_point(
-        filled=True, color="white", size=80
-    ).encode(x="x:Q", y="y:Q")
-
-    st.altair_chart((ringen + zender).properties(width=600, height=600),
-                    use_container_width=False)
-
-    # waardes per ring in een tabel
-    df_tabel = pd.DataFrame({
-        "Afstand [m]": stralen,
-        "RSSI [dBm]": np.round(rssi_r, 1),
-        "SNR [dB]": np.round(snr_r, 1),
-        "PER [%]": np.round(per_r, 1),
-    })
-    st.dataframe(df_tabel, hide_index=True)
+    st.plotly_chart(fig, use_container_width=False)
 
     st.markdown(
         "- **RSSI (dBm):** het ontvangen vermogen. Hoe negatiever, hoe zwakker het signaal.\n"
         "- **SNR (dB):** hoeveel het signaal boven (positief) of onder (negatief) de ruisvloer ligt. LoRa kan nog ontvangen bij een negatieve SNR.\n"
-        "- **PER (%):** de kans dat een pakket niet aankomt. De kleur van de cirkel toont dit: hoe hoger, hoe minder pakketten aankomen.\n"
-        "- **Cirkels:** zelfde afstand tot de zender (het punt in het midden). Het model heeft geen richting, dus de waardes gelden in alle richtingen."
+        "- **PER (%):** de kans dat een pakket niet aankomt. Hoe roder, hoe minder pakketten aankomen.\n"
+        "- **Zone:** het model heeft geen richting, dus de waardes gelden in alle richtingen rond de zender (het witte punt)."
     )
