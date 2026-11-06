@@ -4,3 +4,4 @@ pandas
 scipy
 altair
 matplotlib
+plotly
